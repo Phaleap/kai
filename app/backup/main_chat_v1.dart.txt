@@ -1,0 +1,130 @@
+import 'dart:convert';
+
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+
+const String baseUrl = 'http://127.0.0.1:8000';
+
+void main() {
+  runApp(const CoachApp());
+}
+
+class CoachApp extends StatelessWidget {
+  const CoachApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'AI Fitness Coach',
+      theme: ThemeData(colorSchemeSeed: Colors.green, useMaterial3: true),
+      home: const ChatScreen(),
+    );
+  }
+}
+
+class ChatMessage {
+  final String role;
+  final String content;
+
+  ChatMessage(this.role, this.content);
+}
+
+class ChatScreen extends StatefulWidget {
+  const ChatScreen({super.key});
+
+  @override
+  State<ChatScreen> createState() => _ChatScreenState();
+}
+
+class _ChatScreenState extends State<ChatScreen> {
+  final List<ChatMessage> _messages = [];
+  final TextEditingController _controller = TextEditingController();
+  bool _loading = false;
+
+  Future<void> _send() async {
+    final text = _controller.text.trim();
+    if (text.isEmpty || _loading) return;
+    setState(() {
+      _messages.add(ChatMessage('user', text));
+      _loading = true;
+    });
+    _controller.clear();
+
+    String reply;
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/chat'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'messages': _messages
+              .map((m) => {'role': m.role, 'content': m.content})
+              .toList(),
+        }),
+      );
+      reply = jsonDecode(utf8.decode(response.bodyBytes))['reply'] as String;
+    } catch (e) {
+      reply = 'Could not reach the coach. Is the server running?';
+    }
+
+    setState(() {
+      _messages.add(ChatMessage('assistant', reply));
+      _loading = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('💪 AI Fitness Coach')),
+      body: Column(
+        children: [
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.all(12),
+              itemCount: _messages.length,
+              itemBuilder: (context, index) {
+                final m = _messages[index];
+                final isUser = m.role == 'user';
+                return Align(
+                  alignment:
+                      isUser ? Alignment.centerRight : Alignment.centerLeft,
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(vertical: 4),
+                    padding: const EdgeInsets.all(12),
+                    constraints: const BoxConstraints(maxWidth: 320),
+                    decoration: BoxDecoration(
+                      color: isUser
+                          ? Colors.green.shade200
+                          : Colors.grey.shade200,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(m.content),
+                  ),
+                );
+              },
+            ),
+          ),
+          if (_loading) const LinearProgressIndicator(),
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _controller,
+                    onSubmitted: (_) => _send(),
+                    decoration: const InputDecoration(
+                      hintText: 'Ask your coach...',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                IconButton(onPressed: _send, icon: const Icon(Icons.send)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
